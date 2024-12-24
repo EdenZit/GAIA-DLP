@@ -1,149 +1,103 @@
-import { NextResponse } from 'next/server';
+// app/api/profile/route.ts
+import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/lib/auth';
-import dbConnect from '@/lib/dbConnect';
-import Profile from '@/models/Profile';
+import { connectToDatabase } from '@/lib/db';
+import { Profile } from '@/models/Profile';
+import { rateLimit } from '@/lib/rate-limit';
 
-export async function GET() {
+const limiter = rateLimit({
+  interval: 60 * 1000,
+  uniqueTokenPerInterval: 500
+});
+
+export async function GET(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
+    await limiter.check(req, 20, 'PROFILE_GET');
     
-    if (!session?.user?.id) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+    const session = await getServerSession();
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    await dbConnect();
+    await connectToDatabase();
     
-    const profile = await Profile.findOne({ userId: session.user.id });
+    let profile = await Profile.findOne({ userId: session.user.id });
     
     if (!profile) {
-      return NextResponse.json(
-        { error: 'Profile not found' },
-        { status: 404 }
-      );
-    }
-
-    return NextResponse.json(profile);
-  } catch (error) {
-    console.error('Profile GET Error:', error);
-    return NextResponse.json(
-      { error: 'Internal Server Error' },
-      { status: 500 }
-    );
-  }
-}
-
-export async function POST(req: Request) {
-  try {
-    const session = await getServerSession(authOptions);
-    
-    if (!session?.user?.id) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    await dbConnect();
-    const data = await req.json();
-
-    // Check if profile already exists
-    let profile = await Profile.findOne({ userId: session.user.id });
-
-    if (profile) {
-      // Update existing profile
-      profile = await Profile.findOneAndUpdate(
-        { userId: session.user.id },
-        { ...data, updatedAt: new Date() },
-        { new: true, runValidators: true }
-      );
-    } else {
-      // Create new profile
       profile = await Profile.create({
-        ...data,
         userId: session.user.id,
-        createdAt: new Date(),
-        updatedAt: new Date()
+        education: [],
+        experience: [],
+        skills: []
       });
     }
 
     return NextResponse.json(profile);
-  } catch (error: any) {
-    console.error('Profile POST Error:', error);
+  } catch (error) {
+    console.error('Profile GET error:', error);
     return NextResponse.json(
-      { error: error.message || 'Internal Server Error' },
+      { error: 'Failed to fetch profile' },
       { status: 500 }
     );
   }
 }
 
-export async function PATCH(req: Request) {
+export async function PATCH(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    
-    if (!session?.user?.id) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+    await limiter.check(req, 10, 'PROFILE_PATCH');
+
+    const session = await getServerSession();
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    await dbConnect();
     const data = await req.json();
+    await connectToDatabase();
+
+    const allowedFields = ['imageUrl', 'education', 'experience', 'skills'];
+    const updateData: any = {};
+    
+    Object.keys(data).forEach(key => {
+      if (allowedFields.includes(key)) {
+        updateData[key] = data[key];
+      }
+    });
+
+    updateData.lastUpdated = new Date();
 
     const profile = await Profile.findOneAndUpdate(
       { userId: session.user.id },
-      { ...data, updatedAt: new Date() },
-      { new: true, runValidators: true }
+      { $set: updateData },
+      { new: true, upsert: true }
     );
-
-    if (!profile) {
-      return NextResponse.json(
-        { error: 'Profile not found' },
-        { status: 404 }
-      );
-    }
 
     return NextResponse.json(profile);
   } catch (error) {
-    console.error('Profile PATCH Error:', error);
+    console.error('Profile PATCH error:', error);
     return NextResponse.json(
-      { error: 'Internal Server Error' },
+      { error: 'Failed to update profile' },
       { status: 500 }
     );
   }
 }
 
-export async function DELETE() {
+export async function DELETE(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    
-    if (!session?.user?.id) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+    await limiter.check(req, 5, 'PROFILE_DELETE');
+
+    const session = await getServerSession();
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    await dbConnect();
-    
-    const profile = await Profile.findOneAndDelete({ userId: session.user.id });
-    
-    if (!profile) {
-      return NextResponse.json(
-        { error: 'Profile not found' },
-        { status: 404 }
-      );
-    }
+    await connectToDatabase();
+    await Profile.findOneAndDelete({ userId: session.user.id });
 
     return NextResponse.json({ message: 'Profile deleted successfully' });
   } catch (error) {
-    console.error('Profile DELETE Error:', error);
+    console.error('Profile DELETE error:', error);
     return NextResponse.json(
-      { error: 'Internal Server Error' },
+      { error: 'Failed to delete profile' },
       { status: 500 }
     );
   }

@@ -1,29 +1,23 @@
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '../api/auth/[...nextauth]/route';
-import { redirect } from 'next/navigation';
-import ProfileClient from '@/app/components/profile/ProfileClient';
-import Profile from '@/app/models/Profile';
-import dbConnect from '@/app/lib/dbConnect';
+// app/profile/page.tsx
+'use client';
 
-async function getProfile(userId: string) {
-  await dbConnect();
-  const profile = await Profile.findOne({ userId });
-  return JSON.parse(JSON.stringify(profile)); // Serialize the Mongoose document
-}
+import { Suspense } from 'react';
+import ProfileView from '@/components/profile/ProfileView';
+import ErrorBoundary from '@/components/common/ErrorBoundary';
+import Loading from '@/components/common/Loading';
+import Header from '@/components/common/Header';
 
-export default async function ProfilePage() {
-  const session = await getServerSession(authOptions);
-  
-  if (!session?.user) {
-    redirect('/api/auth/signin');
-  }
-
-  const profile = await getProfile(session.user.id);
-
+export default function ProfilePage() {
   return (
-    <div className="container mx-auto py-8 px-4">
-      <h1 className="text-2xl font-bold mb-6">Your Profile</h1>
-      <ProfileClient initialProfile={profile} />
+    <div className="min-h-screen flex flex-col font-[family-name:var(--font-geist-sans)]">
+      <ErrorBoundary>
+        <Header />
+        <main className="flex-1 container mx-auto py-6">
+          <Suspense fallback={<Loading message="Loading profile..." />}>
+            <ProfileView />
+          </Suspense>
+        </main>
+      </ErrorBoundary>
     </div>
   );
 }
