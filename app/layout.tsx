@@ -1,32 +1,11 @@
-// app/layout.tsx
-import './globals.css'
-import { Inter } from 'next/font/google'
-import { Providers } from './providers'
+import './globals.css';
+import { Inter } from 'next/font/google';
+import { ProvidersWrapper } from './providers-wrapper';
+import { metadata } from './metadata';
 
-const inter = Inter({ subsets: ['latin'] })
+const inter = Inter({ subsets: ['latin'] });
 
-export const metadata = {
-  title: 'GAIA-DLP Learning Platform',
-  description: 'Custom-built online education platform for GAIA Club',
-}
-
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
-  return (
-    <html lang="en">
-      <body className={inter.className}>
-        <Providers>{children}</Providers>
-      </body>
-    </html>
-  )
-}
-
-'use client';
-
-import { SessionProvider } from 'next-auth/react';
+export { metadata };
 
 export default function RootLayout({
   children,
@@ -35,8 +14,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>
-        <SessionProvider>{children}</SessionProvider>
+      <body className={inter.className}>
+        <ProvidersWrapper>
+          {children}
+        </ProvidersWrapper>
       </body>
     </html>
   );
