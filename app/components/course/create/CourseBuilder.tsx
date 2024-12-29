@@ -1,5 +1,5 @@
 // app/components/course/create/CourseBuilder.tsx
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Editor } from '@tinymce/tinymce-react'
 import {
@@ -33,14 +33,36 @@ interface ContentBlock {
   order: number
 }
 
-export function CourseBuilder() {
+interface CourseData {
+  _id?: string
+  title: string
+  description: string
+  thumbnail: string
+  price: number
+  content: Omit<ContentBlock, 'id'>[]
+  published: boolean
+}
+
+interface CourseBuilderProps {
+  initialData?: CourseData
+}
+
+export function CourseBuilder({ initialData }: CourseBuilderProps) {
   const router = useRouter()
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
-  const [price, setPrice] = useState(0)
-  const [thumbnail, setThumbnail] = useState('')
-  const [contentBlocks, setContentBlocks] = useState<ContentBlock[]>([])
+  const [title, setTitle] = useState(initialData?.title || '')
+  const [description, setDescription] = useState(initialData?.description || '')
+  const [price, setPrice] = useState(initialData?.price || 0)
+  const [thumbnail, setThumbnail] = useState(initialData?.thumbnail || '')
+  const [contentBlocks, setContentBlocks] = useState<ContentBlock[]>(() => 
+    initialData?.content.map((block, index) => ({
+      ...block,
+      id: crypto.randomUUID(),
+      order: block.order ?? index
+    })) || []
+  )
   const [loading, setLoading] = useState(false)
+
+  const isEditing = Boolean(initialData?._id)
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -97,8 +119,14 @@ export function CourseBuilder() {
     setLoading(true)
 
     try {
-      const response = await fetch('/api/courses', {
-        method: 'POST',
+      const endpoint = isEditing 
+        ? `/api/courses/${initialData._id}`
+        : '/api/courses'
+
+      const method = isEditing ? 'PUT' : 'POST'
+
+      const response = await fetch(endpoint, {
+        method,
         headers: {
           'Content-Type': 'application/json',
         },
@@ -107,26 +135,28 @@ export function CourseBuilder() {
           description,
           price,
           thumbnail,
-          content: contentBlocks.map(({ id, ...block }) => block),
-          published: false,
+          content: contentBlocks
+            .sort((a, b) => a.order - b.order)
+            .map(({ id, ...block }) => block),
+          published: initialData?.published || false,
         }),
       })
 
       if (!response.ok) {
         const error = await response.json()
-        throw new Error(error.message || 'Failed to create course')
+        throw new Error(error.message || `Failed to ${isEditing ? 'update' : 'create'} course`)
       }
 
       const course = await response.json()
       toast({
         title: "Success",
-        description: "Course created successfully",
+        description: `Course ${isEditing ? 'updated' : 'created'} successfully`,
       })
       router.push(`/courses/${course._id}`)
     } catch (error) {
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : 'Failed to create course',
+        description: error instanceof Error ? error.message : `Failed to ${isEditing ? 'update' : 'create'} course`,
         variant: "destructive",
       })
     } finally {
@@ -251,7 +281,7 @@ export function CourseBuilder() {
           type="submit"
           disabled={loading}
         >
-          {loading ? 'Creating...' : 'Create Course'}
+          {loading ? `${isEditing ? 'Saving...' : 'Creating...'}` : `${isEditing ? 'Save Changes' : 'Create Course'}`}
         </Button>
       </div>
     </form>

@@ -1,30 +1,14 @@
+// app/api/upload/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { writeFile } from 'fs/promises';
-import { join } from 'path';
 import { getServerSession } from 'next-auth/next';
-import { rateLimit } from '@/lib/rate-limit';
-import sanitize from 'sanitize-filename';
-
-const limiter = rateLimit({
-  interval: 60 * 1000, // 60 seconds
-  uniqueTokenPerInterval: 500 // Max 500 users per second
-});
+import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import { writeFile } from 'fs/promises';
+import path from 'path';
 
 export async function POST(request: NextRequest) {
   try {
-    // Rate limiting
-    try {
-      await limiter.check(request, 10, 'UPLOAD_RATE_LIMIT'); // 10 requests per minute
-    } catch {
-      return NextResponse.json(
-        { error: 'Too many uploads. Please try again later.' },
-        { status: 429 }
-      );
-    }
-
-    // Auth check
-    const session = await getServerSession();
-    if (!session) {
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -36,47 +20,48 @@ export async function POST(request: NextRequest) {
     
     if (!file) {
       return NextResponse.json(
-        { error: 'No file provided' },
+        { error: 'No file uploaded' },
         { status: 400 }
       );
     }
 
-    // Validate file type
-    const validTypes = ['image/jpeg', 'image/png', 'image/gif'];
-    if (!validTypes.includes(file.type)) {
+    // Validate file type and size
+    const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf', 'video/mp4'];
+    if (!allowedTypes.includes(file.type)) {
       return NextResponse.json(
         { error: 'Invalid file type' },
         { status: 400 }
       );
     }
 
-    // Validate file size (5MB)
-    if (file.size > 5 * 1024 * 1024) {
+    const maxSize = 100 * 1024 * 1024; // 100MB
+    if (file.size > maxSize) {
       return NextResponse.json(
         { error: 'File too large' },
         { status: 400 }
       );
     }
 
+    // Create unique filename
+    const timestamp = Date.now();
+    const filename = `${timestamp}-${file.name}`;
+    const uploadDir = path.join(process.cwd(), 'public', 'uploads');
+    const filepath = path.join(uploadDir, filename);
+
+    // Convert File to Buffer and save
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
+    await writeFile(filepath, buffer);
 
-    // Sanitize filename and create path
-    const fileName = sanitize(file.name);
-    const path = join(process.cwd(), 'public/uploads', fileName);
-
-    // Write file
-    await writeFile(path, buffer);
-
-    // Return the URL
-    const url = `/uploads/${fileName}`;
-
-    return NextResponse.json({ url });
+    // Return the file URL
+    const fileUrl = `/uploads/${filename}`;
+    return NextResponse.json({ url: fileUrl });
   } catch (error) {
-    console.error('Upload error:', error);
+    console.error('Error uploading file:', error);
     return NextResponse.json(
-      { error: 'Failed to upload file' },
+      { error: 'Internal Server Error' },
       { status: 500 }
     );
   }
 }
+

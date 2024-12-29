@@ -1,23 +1,24 @@
 // app/api/test-db/route.ts
-import { NextResponse } from 'next/server'
-import { UserService } from '@/lib/db/crud/users'
+import { NextResponse } from 'next/server';
+import { connectDB } from '@/app/lib/db';
 
 export async function GET() {
   try {
-    const userService = new UserService()
-    const testUser = await userService.createUser({
-      name: 'Test User',
-      email: 'test@example.com',
-      password: 'testpassword123', // In production, this should be hashed
-      role: 'student'
-    })
+    console.log('Attempting database connection...');
+    const mongoose = await connectDB();
     
-    return NextResponse.json({ success: true, user: testUser })
+    return NextResponse.json({
+      status: 'success',
+      message: 'Database connection successful',
+      connectionState: mongoose.connection.readyState,
+      database: mongoose.connection.name
+    });
   } catch (error) {
-    console.error('Database test failed:', error)
-    return NextResponse.json(
-      { success: false, error: 'Database connection failed' },
-      { status: 500 }
-    )
+    console.error('Database connection error:', error);
+    return NextResponse.json({
+      status: 'error',
+      message: 'Database connection failed',
+      error: error.message
+    }, { status: 500 });
   }
 }
