@@ -1,7 +1,6 @@
-// app/components/course/CourseCard.tsx
+'use client'
+
 import React from 'react'
-import Image from 'next/image'
-import Link from 'next/link'
 import { Card, CardContent, CardFooter, CardHeader } from '@/app/components/ui/card'
 import { Button } from '@/app/components/ui/button'
 import { Badge } from '@/app/components/ui/badge'
@@ -28,12 +27,10 @@ export function CourseCard({ course, onEdit, isInstructor }: CourseCardProps) {
     <Card className="w-full max-w-sm transition-all hover:shadow-lg">
       <CardHeader className="p-0">
         <div className="relative aspect-video w-full overflow-hidden rounded-t-lg">
-          <Image
+          <img
             src={course.thumbnail || '/assets/placeholder-course.jpg'}
             alt={course.title}
-            fill
-            className="object-cover"
-            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+            className="h-full w-full object-cover"
           />
         </div>
       </CardHeader>
@@ -61,9 +58,9 @@ export function CourseCard({ course, onEdit, isInstructor }: CourseCardProps) {
         </div>
       </CardContent>
       <CardFooter className="flex justify-between p-4">
-        <Link href={`/courses/${course._id}`} passHref>
+        <a href={`/courses/${course._id}`}>
           <Button variant="default">View Course</Button>
-        </Link>
+        </a>
         {isInstructor && (
           <Button variant="outline" onClick={onEdit}>
             Edit Course

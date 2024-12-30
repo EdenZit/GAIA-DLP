@@ -1,7 +1,8 @@
 // app/courses/page.tsx
 import { CourseGrid } from '@/app/components/course/list/CourseGrid'
+import { Metadata } from 'next'
 
-export const metadata = {
+export const metadata: Metadata = {
   title: 'Courses - GAIA-DLP',
   description: 'Browse all available courses'
 }
