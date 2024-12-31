@@ -1,52 +1,49 @@
 // app/components/course/create/SortableContentBlock.tsx
-import React from 'react'
-import { useSortable } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
-import { GripVertical } from 'lucide-react'
-import { Editor } from '@tinymce/tinymce-react'
-import { Card, CardContent } from '@/app/components/ui/card'
-import { Button } from '@/app/components/ui/button'
-import { Input } from '@/app/components/ui/input'
-import { Label } from '@/app/components/ui/label'
-import { Textarea } from '@/app/components/ui/textarea'
+'use client';
+
+import React from 'react';
+import { useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { GripVertical } from 'lucide-react';
+import { Editor } from '@tinymce/tinymce-react';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 
 interface ContentBlock {
-  id: string
-  title: string
-  type: 'text' | 'video' | 'quiz'
-  content: string
-  order: number
+  type: string;
+  data: any;
+  title: string;
+  content: string;
 }
 
 interface Props {
-  block: ContentBlock
-  onUpdate: (updates: Partial<ContentBlock>) => void
-  onRemove: () => void
+  content: ContentBlock[];
+  onChange: (content: ContentBlock[]) => void;
+  error?: string;
 }
 
-export function SortableContentBlock({ block, onUpdate, onRemove }: Props) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: block.id })
+export function SortableContentBlock({ content, onChange, error }: Props) {
+  const updateBlock = (index: number, updates: Partial<ContentBlock>) => {
+    const newContent = [...content];
+    newContent[index] = { ...newContent[index], ...updates };
+    onChange(newContent);
+  };
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : undefined,
-  }
+  const removeBlock = (index: number) => {
+    const newContent = content.filter((_, i) => i !== index);
+    onChange(newContent);
+  };
 
-  const renderContent = () => {
+  const renderBlockContent = (block: ContentBlock, index: number) => {
     switch (block.type) {
       case 'text':
         return (
           <Editor
             value={block.content}
-            onEditorChange={(content) => onUpdate({ content })}
+            onEditorChange={(content) => updateBlock(index, { content })}
             init={{
               height: 300,
               menubar: false,
@@ -63,15 +60,15 @@ export function SortableContentBlock({ block, onUpdate, onRemove }: Props) {
               content_style: 'body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; font-size: 16px; }',
             }}
           />
-        )
+        );
       case 'video':
         return (
           <div className="space-y-2">
-            <Label htmlFor={`video-${block.id}`}>Video URL</Label>
+            <Label htmlFor={`video-${index}`}>Video URL</Label>
             <Input
-              id={`video-${block.id}`}
+              id={`video-${index}`}
               value={block.content}
-              onChange={(e) => onUpdate({ content: e.target.value })}
+              onChange={(e) => updateBlock(index, { content: e.target.value })}
               placeholder="Enter video URL (YouTube, Vimeo, etc.)"
             />
             {block.content && (
@@ -85,14 +82,14 @@ export function SortableContentBlock({ block, onUpdate, onRemove }: Props) {
               </div>
             )}
           </div>
-        )
+        );
       case 'quiz':
         return (
           <div className="space-y-2">
             <Label>Quiz Content</Label>
             <Textarea
               value={block.content}
-              onChange={(e) => onUpdate({ content: e.target.value })}
+              onChange={(e) => updateBlock(index, { content: e.target.value })}
               placeholder="Enter quiz questions in JSON format"
               rows={10}
               className="font-mono text-sm"
@@ -105,43 +102,72 @@ export function SortableContentBlock({ block, onUpdate, onRemove }: Props) {
               </div>
             )}
           </div>
-        )
+        );
+      default:
+        return null;
     }
-  }
+  };
 
   return (
-    <Card ref={setNodeRef} style={style} className="relative">
-      <div
-        className="absolute left-0 top-0 h-full w-8 cursor-move border-r bg-gray-50 p-2 hover:bg-gray-100"
-        {...attributes}
-        {...listeners}
-      >
-        <GripVertical className="h-4 w-4 text-gray-400" />
-      </div>
-      <CardContent className="ml-8 p-4">
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex-1">
-            <Label htmlFor={`title-${block.id}`}>Title</Label>
-            <Input
-              id={`title-${block.id}`}
-              value={block.title}
-              onChange={(e) => onUpdate({ title: e.target.value })}
-              className="max-w-md"
-              placeholder={`Enter ${block.type} block title`}
-            />
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onRemove}
-            className="ml-4"
-          >
-            Remove
-          </Button>
-        </div>
+    <div className="space-y-4">
+      {content.map((block, index) => {
+        const {
+          attributes,
+          listeners,
+          setNodeRef,
+          transform,
+          transition,
+          isDragging,
+        } = useSortable({ id: index.toString() });
 
-        {renderContent()}
-      </CardContent>
-    </Card>
-  )
+        const style = {
+          transform: CSS.Transform.toString(transform),
+          transition,
+          opacity: isDragging ? 0.5 : undefined,
+        };
+
+        return (
+          <Card key={index} ref={setNodeRef} style={style} className="relative">
+            <div
+              className="absolute left-0 top-0 h-full w-8 cursor-move border-r bg-gray-50 p-2 hover:bg-gray-100"
+              {...attributes}
+              {...listeners}
+            >
+              <GripVertical className="h-4 w-4 text-gray-400" />
+            </div>
+            <CardContent className="ml-8 p-4">
+              <div className="mb-4 flex items-center justify-between">
+                <div className="flex-1">
+                  <Label htmlFor={`title-${index}`}>Title</Label>
+                  <Input
+                    id={`title-${index}`}
+                    value={block.title || ''}
+                    onChange={(e) => updateBlock(index, { title: e.target.value })}
+                    className="max-w-md"
+                    placeholder={`Enter ${block.type} block title`}
+                  />
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => removeBlock(index)}
+                  className="ml-4"
+                >
+                  Remove
+                </Button>
+              </div>
+              {renderBlockContent(block, index)}
+            </CardContent>
+          </Card>
+        );
+      })}
+      {error && (
+        <div className="text-sm text-red-500" role="alert">
+          {error}
+        </div>
+      )}
+    </div>
+  );
 }
+
+export default SortableContentBlock;

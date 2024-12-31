@@ -3,6 +3,8 @@
 
 import React, { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -33,7 +35,7 @@ interface CourseFormData {
 }
 
 interface CourseBuilderProps {
-  initialData?: Partial<CourseFormData>;
+  initialData?: Partial<CourseFormData> & { _id?: string };
   isEditing?: boolean;
 }
 
@@ -123,7 +125,7 @@ export default function CourseBuilder({ initialData, isEditing = false }: Course
   }, 300);
 
   const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
   ) => {
     const { name, value } = e.target;
 
@@ -210,6 +212,32 @@ export default function CourseBuilder({ initialData, isEditing = false }: Course
     }
   };
 
+  const addContentBlock = (type: string) => {
+    const newContent = [...formData.content, { type, data: '' }];
+    handleContentChange(newContent);
+  };
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragEnd = (event: any) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      setFormData(prev => {
+        const oldIndex = parseInt(active.id);
+        const newIndex = parseInt(over.id);
+        return {
+          ...prev,
+          content: arrayMove(prev.content, oldIndex, newIndex)
+        };
+      });
+    }
+  };
+
   return (
     <form 
       onSubmit={handleSubmit} 
@@ -291,11 +319,53 @@ export default function CourseBuilder({ initialData, isEditing = false }: Course
 
           <div className="space-y-4">
             <label className="text-sm font-medium">Course Content</label>
-            <SortableContentBlock
-              content={formData.content}
-              onChange={handleContentChange}
-              error={errors.content}
-            />
+            <div className="space-x-2 mb-4">
+              <Button
+                type="button"
+                onClick={() => addContentBlock('text')}
+                variant="outline"
+              >
+                Add Text
+              </Button>
+              <Button
+                type="button"
+                onClick={() => addContentBlock('video')}
+                variant="outline"
+              >
+                Add Video
+              </Button>
+              <Button
+                type="button"
+                onClick={() => addContentBlock('quiz')}
+                variant="outline"
+              >
+                Add Quiz
+              </Button>
+              <Button
+                type="button"
+                onClick={() => addContentBlock('assignment')}
+                variant="outline"
+              >
+                Add Assignment
+              </Button>
+            </div>
+
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={formData.content.map((_, i) => i.toString())}
+                strategy={verticalListSortingStrategy}
+              >
+                <SortableContentBlock
+                  content={formData.content}
+                  onChange={handleContentChange}
+                  error={errors.content}
+                />
+              </SortableContext>
+            </DndContext>
           </div>
 
           <div className="space-y-4">
@@ -352,10 +422,7 @@ export default function CourseBuilder({ initialData, isEditing = false }: Course
                 id="status"
                 name="status"
                 value={formData.status}
-                onChange={(e) => setFormData(prev => ({
-                  ...prev,
-                  status: e.target.value as CourseFormData['status']
-                }))}
+                onChange={handleChange}
                 className="w-full rounded-md border border-input bg-background px-3 py-2"
                 aria-label="Course status"
               >

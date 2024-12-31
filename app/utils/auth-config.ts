@@ -1,8 +1,10 @@
-import { NextAuthOptions } from 'next-auth'
-import CredentialsProvider from 'next-auth/providers/credentials'
-import bcrypt from 'bcryptjs'
-import dbConnect from '@/lib/db/connect'
-import { User } from '@/lib/db/models/user'
+// app/utils/auth-config.ts
+import { NextAuthOptions } from 'next-auth';
+import CredentialsProvider from 'next-auth/providers/credentials';
+import bcrypt from 'bcryptjs';
+import { connectDB } from '@/app/lib/mongodb';
+import { User } from '@/app/models/User';
+
 
 export const authOptions: NextAuthOptions = {
   providers: [

@@ -1,124 +1,130 @@
-// app/api/courses/route.ts
+//app/api/courses/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { Course } from '@/app/models/Course';
-import { courseInputSchema } from '@/app/lib/validations/course';
-import { connectDB } from '@/app/lib/db';
-import { rateLimit } from '@/app/lib/rate-limit';
-
-export async function POST(req: NextRequest) {
-  try {
-    const session = await getServerSession();
-    if (!session?.user) {
-      return NextResponse.json(
-        { error: 'Authentication required' },
-        { status: 401 }
-      );
-    }
-
-    // Apply rate limiting
-    const limiter = await rateLimit();
-    const response = await limiter.check();
-    if (!response.success) {
-      return NextResponse.json(
-        { error: 'Rate limit exceeded' },
-        { status: 429 }
-      );
-    }
-
-    await connectDB();
-    const body = await req.json();
-    
-    // Validate input data
-    const validatedData = courseInputSchema.parse(body);
-
-    const course = new Course({
-      ...validatedData,
-      instructor: session.user.id
-    });
-
-    await course.save();
-    await course.populate('instructor', 'name email');
-    
-    return NextResponse.json(course, { status: 201 });
-  } catch (error) {
-    console.error('Course POST error:', error);
-    if (error instanceof Error) {
-      return NextResponse.json(
-        { error: error.message },
-        { status: 400 }
-      );
-    }
-    return NextResponse.json(
-      { error: 'Internal Server Error' },
-      { status: 500 }
-    );
-  }
-}
+import { getServerSession } from 'next-auth/next';
+import mongoose from 'mongoose';
+import Course from '@/app/models/Course';
+import { connectDB } from '@/app/lib/mongodb';
+import { mongodb as dbConnect } from '@/app/lib/mongodb';
+import { authOptions } from '@/app/utils/auth-config';
 
 export async function GET(req: NextRequest) {
   try {
     await connectDB();
-    
-    const { searchParams } = new URL(req.url);
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '10');
-    const search = searchParams.get('search') || '';
-    const instructorId = searchParams.get('instructor');
-    const published = searchParams.get('published');
-
+    const searchParams = req.nextUrl.searchParams;
     const query: any = {};
     
-    // Build query
-    if (search) {
-      query.$text = { $search: search };
+    // Build query based on search parameters
+    if (searchParams.has('category')) {
+      query.category = searchParams.get('category');
     }
-    if (instructorId) {
-      query.instructor = instructorId;
+    if (searchParams.has('level')) {
+      query.level = searchParams.get('level');
     }
-    if (published !== null) {
-      query.published = published === 'true';
+    if (searchParams.has('status')) {
+      query.status = searchParams.get('status');
+    }
+    if (searchParams.has('instructor')) {
+      query.instructor = new mongoose.Types.ObjectId(searchParams.get('instructor')!);
+    }
+    if (searchParams.has('search')) {
+      query.$text = { $search: searchParams.get('search')! };
     }
 
-    const [courses, total] = await Promise.all([
-      Course.find(query)
-        .populate('instructor', 'name email')
-        .skip((page - 1) * limit)
-        .limit(limit)
-        .sort({ createdAt: -1 }),
-      Course.countDocuments(query)
-    ]);
+    // Pagination
+    const page = parseInt(searchParams.get('page') || '1');
+    const limit = parseInt(searchParams.get('limit') || '10');
+    const skip = (page - 1) * limit;
+
+    // Execute query with pagination
+    const courses = await Course.find(query)
+      .skip(skip)
+      .limit(limit)
+      .populate('instructor', 'name email')
+      .sort({ createdAt: -1 });
+
+    const total = await Course.countDocuments(query);
 
     return NextResponse.json({
       courses,
       pagination: {
         total,
         page,
-        pages: Math.ceil(total / limit),
-        hasMore: page * limit < total
+        pages: Math.ceil(total / limit)
       }
     });
   } catch (error) {
-    console.error('Course GET error:', error);
+    console.error('Error fetching courses:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch courses' },
+      { error: 'Internal server error' },
       { status: 500 }
     );
   }
 }
 
-// Add this file: app/api/courses/[courseId]/route.ts
-export async function GET(
-  req: NextRequest,
-  { params }: { params: { courseId: string } }
-) {
+export async function POST(req: NextRequest) {
   try {
-    const session = await getServerSession();
+    const session = await getServerSession(authOptions);
+    if (!session) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
     await connectDB();
+    const body = await req.json();
 
-    const course = await Course.findById(params.courseId)
-      .populate('instructor', 'name email');
+    // Validate required fields
+    const requiredFields = ['title', 'description', 'category', 'level', 'duration'];
+    for (const field of requiredFields) {
+      if (!body[field]) {
+        return NextResponse.json(
+          { error: `Missing required field: ${field}` },
+          { status: 400 }
+        );
+      }
+    }
 
+    // Create new course
+    const course = new Course({
+      ...body,
+      instructor: session.user.id,
+      status: 'draft'
+    });
+
+    await course.save();
+
+    return NextResponse.json(course, { status: 201 });
+  } catch (error) {
+    console.error('Error creating course:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PUT(req: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    await connectDB();
+    const { courseId, ...updateData } = await req.json();
+
+    if (!courseId) {
+      return NextResponse.json(
+        { error: 'Course ID is required' },
+        { status: 400 }
+      );
+    }
+
+    const course = await Course.findById(courseId);
     if (!course) {
       return NextResponse.json(
         { error: 'Course not found' },
@@ -126,20 +132,74 @@ export async function GET(
       );
     }
 
-    // If course is not published, only instructor can view it
-    if (!course.published && 
-        (!session?.user || course.instructor.toString() !== session.user.id)) {
+    // Check if user is the instructor
+    if (course.instructor.toString() !== session.user.id) {
       return NextResponse.json(
-        { error: 'Not authorized to view this course' },
+        { error: 'Unauthorized' },
         { status: 403 }
       );
     }
 
+    // Update course
+    Object.assign(course, updateData);
+    await course.save();
+
     return NextResponse.json(course);
   } catch (error) {
-    console.error('Course GET error:', error);
+    console.error('Error updating course:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch course' },
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    await connectDB();
+    const { courseId } = await req.json();
+
+    if (!courseId) {
+      return NextResponse.json(
+        { error: 'Course ID is required' },
+        { status: 400 }
+      );
+    }
+
+    const course = await Course.findById(courseId);
+    if (!course) {
+      return NextResponse.json(
+        { error: 'Course not found' },
+        { status: 404 }
+      );
+    }
+
+    // Check if user is the instructor
+    if (course.instructor.toString() !== session.user.id) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 403 }
+      );
+    }
+
+    await course.deleteOne();
+
+    return NextResponse.json(
+      { message: 'Course deleted successfully' },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error('Error deleting course:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
       { status: 500 }
     );
   }
