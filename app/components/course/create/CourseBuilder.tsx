@@ -1,289 +1,418 @@
 // app/components/course/create/CourseBuilder.tsx
-import React, { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { Editor } from '@tinymce/tinymce-react'
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core'
-import {
-  arrayMove,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable'
+'use client';
 
-import { Button } from '@/app/components/ui/button'
-import { Input } from '@/app/components/ui/input'
-import { Label } from '@/app/components/ui/label'
-import { Textarea } from '@/app/components/ui/textarea'
-import { Card, CardContent } from '@/app/components/ui/card'
-import { toast } from '@/app/components/ui/use-toast'
-import { SortableContentBlock } from './SortableContentBlock'
+import React, { useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Textarea } from '@/components/ui/textarea';
+import { useDebounce } from '@/app/lib/hooks/useDebounce';
+import SortableContentBlock from './SortableContentBlock';
+import ResourceManager from '../ResourceManager';
 
-interface ContentBlock {
-  id: string
-  title: string
-  type: 'text' | 'video' | 'quiz'
-  content: string
-  order: number
+interface ValidationErrors {
+  title?: string;
+  description?: string;
+  content?: string;
+  tags?: string;
+  general?: string;
 }
 
-interface CourseData {
-  _id?: string
-  title: string
-  description: string
-  thumbnail: string
-  price: number
-  content: Omit<ContentBlock, 'id'>[]
-  published: boolean
+interface CourseFormData {
+  title: string;
+  description: string;
+  content: Array<{
+    type: string;
+    data: any;
+  }>;
+  resources: string[];
+  tags: string[];
+  status: 'draft' | 'published' | 'archived';
 }
 
 interface CourseBuilderProps {
-  initialData?: CourseData
+  initialData?: Partial<CourseFormData>;
+  isEditing?: boolean;
 }
 
-export function CourseBuilder({ initialData }: CourseBuilderProps) {
-  const router = useRouter()
-  const [title, setTitle] = useState(initialData?.title || '')
-  const [description, setDescription] = useState(initialData?.description || '')
-  const [price, setPrice] = useState(initialData?.price || 0)
-  const [thumbnail, setThumbnail] = useState(initialData?.thumbnail || '')
-  const [contentBlocks, setContentBlocks] = useState<ContentBlock[]>(() => 
-    initialData?.content.map((block, index) => ({
-      ...block,
-      id: crypto.randomUUID(),
-      order: block.order ?? index
-    })) || []
-  )
-  const [loading, setLoading] = useState(false)
+export default function CourseBuilder({ initialData, isEditing = false }: CourseBuilderProps) {
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<ValidationErrors>({});
+  const [formData, setFormData] = useState<CourseFormData>({
+    title: initialData?.title || '',
+    description: initialData?.description || '',
+    content: initialData?.content || [],
+    resources: initialData?.resources || [],
+    tags: initialData?.tags || [],
+    status: initialData?.status || 'draft'
+  });
 
-  const isEditing = Boolean(initialData?._id)
-
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  )
-
-  const handleDragEnd = (event: any) => {
-    const { active, over } = event
-    if (!over) return
-
-    if (active.id !== over.id) {
-      setContentBlocks((blocks) => {
-        const oldIndex = blocks.findIndex((block) => block.id === active.id)
-        const newIndex = blocks.findIndex((block) => block.id === over.id)
-
-        return arrayMove(blocks, oldIndex, newIndex).map((block, index) => ({
-          ...block,
-          order: index,
-        }))
-      })
+  // Validation rules
+  const validateField = (name: string, value: any): string | undefined => {
+    switch (name) {
+      case 'title':
+        if (!value.trim()) return 'Title is required';
+        if (value.length < 3) return 'Title must be at least 3 characters';
+        if (value.length > 100) return 'Title must be less than 100 characters';
+        return undefined;
+      
+      case 'description':
+        if (!value.trim()) return 'Description is required';
+        if (value.length < 10) return 'Description must be at least 10 characters';
+        if (value.length > 500) return 'Description must be less than 500 characters';
+        return undefined;
+      
+      case 'content':
+        if (!value.length) return 'At least one content block is required';
+        return undefined;
+      
+      case 'tags':
+        if (value.some((tag: string) => tag.length > 20)) {
+          return 'Each tag must be less than 20 characters';
+        }
+        if (value.length > 10) return 'Maximum 10 tags allowed';
+        return undefined;
+      
+      default:
+        return undefined;
     }
-  }
+  };
 
-  const addContentBlock = (type: 'text' | 'video' | 'quiz') => {
-    const newBlock: ContentBlock = {
-      id: crypto.randomUUID(),
-      title: '',
-      type,
-      content: '',
-      order: contentBlocks.length,
+  const validateForm = useCallback((): boolean => {
+    const newErrors: ValidationErrors = {};
+    
+    // Validate each field
+    Object.keys(formData).forEach((key) => {
+      const error = validateField(key, formData[key as keyof CourseFormData]);
+      if (error) newErrors[key as keyof ValidationErrors] = error;
+    });
+
+    // Additional cross-field validations
+    if (formData.content.length > 0 && !formData.content.some(block => block.type === 'text')) {
+      newErrors.content = 'At least one text block is required';
     }
-    setContentBlocks([...contentBlocks, newBlock])
-  }
 
-  const updateContentBlock = (id: string, updates: Partial<ContentBlock>) => {
-    setContentBlocks(blocks =>
-      blocks.map(block =>
-        block.id === id ? { ...block, ...updates } : block
-      )
-    )
-  }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  }, [formData]);
 
-  const removeContentBlock = (id: string) => {
-    setContentBlocks(blocks =>
-      blocks.filter(block => block.id !== id)
-        .map((block, index) => ({ ...block, order: index }))
-    )
-  }
+  // Debounced tag processing
+  const processTagsDebounced = useDebounce((value: string) => {
+    const tags = value
+      .split(',')
+      .map(tag => tag.trim())
+      .filter(tag => tag.length > 0);
+    
+    setFormData(prev => ({
+      ...prev,
+      tags
+    }));
+
+    const tagError = validateField('tags', tags);
+    if (tagError) {
+      setErrors(prev => ({ ...prev, tags: tagError }));
+    } else {
+      setErrors(prev => {
+        const { tags, ...rest } = prev;
+        return rest;
+      });
+    }
+  }, 300);
+
+  const handleChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) => {
+    const { name, value } = e.target;
+
+    if (name === 'tags') {
+      processTagsDebounced(value);
+      return;
+    }
+
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+
+    // Clear error when user starts typing
+    if (errors[name as keyof ValidationErrors]) {
+      setErrors(prev => {
+        const { [name as keyof ValidationErrors]: _, ...rest } = prev;
+        return rest;
+      });
+    }
+
+    // Immediate validation for title and description
+    if (name === 'title' || name === 'description') {
+      const error = validateField(name, value);
+      if (error) {
+        setErrors(prev => ({ ...prev, [name]: error }));
+      }
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
+    e.preventDefault();
+    
+    if (!validateForm()) {
+      return;
+    }
 
+    setLoading(true);
+    
     try {
-      const endpoint = isEditing 
-        ? `/api/courses/${initialData._id}`
-        : '/api/courses'
-
-      const method = isEditing ? 'PUT' : 'POST'
-
-      const response = await fetch(endpoint, {
-        method,
+      const url = isEditing 
+        ? `/api/courses/${initialData?._id}`
+        : '/api/courses';
+      
+      const response = await fetch(url, {
+        method: isEditing ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          title,
-          description,
-          price,
-          thumbnail,
-          content: contentBlocks
-            .sort((a, b) => a.order - b.order)
-            .map(({ id, ...block }) => block),
-          published: initialData?.published || false,
-        }),
-      })
+        body: JSON.stringify(formData),
+      });
+
+      const data = await response.json();
 
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.message || `Failed to ${isEditing ? 'update' : 'create'} course`)
+        throw new Error(data.error || 'Failed to save course');
       }
 
-      const course = await response.json()
-      toast({
-        title: "Success",
-        description: `Course ${isEditing ? 'updated' : 'created'} successfully`,
-      })
-      router.push(`/courses/${course._id}`)
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : `Failed to ${isEditing ? 'update' : 'create'} course`,
-        variant: "destructive",
-      })
+      router.push(`/courses/${data._id}`);
+    } catch (err) {
+      setErrors(prev => ({
+        ...prev,
+        general: err instanceof Error ? err.message : 'An unexpected error occurred'
+      }));
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
+
+  const handleContentChange = (newContent: typeof formData.content) => {
+    setFormData(prev => ({
+      ...prev,
+      content: newContent
+    }));
+
+    const contentError = validateField('content', newContent);
+    if (contentError) {
+      setErrors(prev => ({ ...prev, content: contentError }));
+    } else {
+      setErrors(prev => {
+        const { content, ...rest } = prev;
+        return rest;
+      });
+    }
+  };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-8">
-      <div className="space-y-4">
-        <div>
-          <Label htmlFor="title">Course Title</Label>
-          <Input
-            id="title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            required
-            placeholder="Enter course title"
-            className="mt-1"
-          />
-        </div>
-
-        <div>
-          <Label htmlFor="description">Description</Label>
-          <Textarea
-            id="description"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            required
-            placeholder="Enter course description"
-            className="mt-1"
-          />
-        </div>
-
-        <div>
-          <Label htmlFor="price">Price</Label>
-          <Input
-            id="price"
-            type="number"
-            min="0"
-            step="0.01"
-            value={price}
-            onChange={(e) => setPrice(Number(e.target.value))}
-            required
-            placeholder="0.00"
-            className="mt-1"
-          />
-        </div>
-
-        <div>
-          <Label htmlFor="thumbnail">Thumbnail URL</Label>
-          <Input
-            id="thumbnail"
-            type="url"
-            value={thumbnail}
-            onChange={(e) => setThumbnail(e.target.value)}
-            placeholder="https://example.com/image.jpg"
-            className="mt-1"
-          />
-        </div>
-      </div>
-
+    <form 
+      onSubmit={handleSubmit} 
+      className="space-y-6 max-w-4xl mx-auto py-8"
+      aria-label="Course creation form"
+    >
+      {errors.general && (
+        <Alert variant="destructive">
+          <AlertTitle>Error</AlertTitle>
+          <AlertDescription>{errors.general}</AlertDescription>
+        </Alert>
+      )}
+      
       <Card>
-        <CardContent className="p-6">
-          <div className="mb-4 flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => addContentBlock('text')}
+        <CardHeader>
+          <CardTitle>{isEditing ? 'Edit Course' : 'Create New Course'}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="space-y-2">
+            <label 
+              htmlFor="title" 
+              className="text-sm font-medium"
             >
-              Add Text Block
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => addContentBlock('video')}
-            >
-              Add Video
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => addContentBlock('quiz')}
-            >
-              Add Quiz
-            </Button>
+              Course Title
+            </label>
+            <Input
+              id="title"
+              name="title"
+              value={formData.title}
+              onChange={handleChange}
+              aria-describedby="title-error"
+              aria-invalid={!!errors.title}
+              required
+              maxLength={100}
+              placeholder="Enter course title"
+              className={errors.title ? 'border-red-500' : ''}
+            />
+            {errors.title && (
+              <p 
+                id="title-error" 
+                className="text-sm text-red-500"
+                role="alert"
+              >
+                {errors.title}
+              </p>
+            )}
           </div>
 
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-          >
-            <SortableContext
-              items={contentBlocks.map(block => block.id)}
-              strategy={verticalListSortingStrategy}
+          <div className="space-y-2">
+            <label 
+              htmlFor="description" 
+              className="text-sm font-medium"
             >
-              <div className="space-y-4">
-                {contentBlocks.map((block) => (
-                  <SortableContentBlock
-                    key={block.id}
-                    block={block}
-                    onUpdate={(updates) => updateContentBlock(block.id, updates)}
-                    onRemove={() => removeContentBlock(block.id)}
-                  />
-                ))}
-              </div>
-            </SortableContext>
-          </DndContext>
+              Description
+            </label>
+            <Textarea
+              id="description"
+              name="description"
+              value={formData.description}
+              onChange={handleChange}
+              aria-describedby="description-error"
+              aria-invalid={!!errors.description}
+              required
+              maxLength={500}
+              placeholder="Enter course description"
+              rows={4}
+              className={errors.description ? 'border-red-500' : ''}
+            />
+            {errors.description && (
+              <p 
+                id="description-error" 
+                className="text-sm text-red-500"
+                role="alert"
+              >
+                {errors.description}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-4">
+            <label className="text-sm font-medium">Course Content</label>
+            <SortableContentBlock
+              content={formData.content}
+              onChange={handleContentChange}
+              error={errors.content}
+            />
+          </div>
+
+          <div className="space-y-4">
+            <label className="text-sm font-medium">Resources</label>
+            <ResourceManager
+              resources={formData.resources}
+              onChange={(resources) => setFormData(prev => ({ ...prev, resources }))}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label 
+              htmlFor="tags" 
+              className="text-sm font-medium"
+            >
+              Tags (comma-separated)
+            </label>
+            <Input
+              id="tags"
+              name="tags"
+              value={formData.tags.join(', ')}
+              onChange={handleChange}
+              aria-describedby="tags-error tags-help"
+              aria-invalid={!!errors.tags}
+              placeholder="Enter tags (e.g., programming, web development)"
+              className={errors.tags ? 'border-red-500' : ''}
+            />
+            <p 
+              id="tags-help" 
+              className="text-sm text-gray-500"
+            >
+              Add up to 10 tags, separated by commas
+            </p>
+            {errors.tags && (
+              <p 
+                id="tags-error" 
+                className="text-sm text-red-500"
+                role="alert"
+              >
+                {errors.tags}
+              </p>
+            )}
+          </div>
+
+          {isEditing && (
+            <div className="space-y-2">
+              <label 
+                htmlFor="status" 
+                className="text-sm font-medium"
+              >
+                Status
+              </label>
+              <select
+                id="status"
+                name="status"
+                value={formData.status}
+                onChange={(e) => setFormData(prev => ({
+                  ...prev,
+                  status: e.target.value as CourseFormData['status']
+                }))}
+                className="w-full rounded-md border border-input bg-background px-3 py-2"
+                aria-label="Course status"
+              >
+                <option value="draft">Draft</option>
+                <option value="published">Published</option>
+                <option value="archived">Archived</option>
+              </select>
+            </div>
+          )}
+
+          <div className="flex justify-end space-x-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => router.back()}
+              disabled={loading}
+              aria-label="Cancel course creation"
+            >
+              Cancel
+            </Button>
+            <Button 
+              type="submit" 
+              disabled={loading}
+              aria-label={isEditing ? 'Update course' : 'Create course'}
+            >
+              {loading ? (
+                <span className="flex items-center">
+                  <svg 
+                    className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" 
+                    xmlns="http://www.w3.org/2000/svg" 
+                    fill="none" 
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <circle 
+                      className="opacity-25" 
+                      cx="12" 
+                      cy="12" 
+                      r="10" 
+                      stroke="currentColor" 
+                      strokeWidth="4"
+                    />
+                    <path 
+                      className="opacity-75" 
+                      fill="currentColor" 
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    />
+                  </svg>
+                  Saving...
+                </span>
+              ) : (
+                isEditing ? 'Update Course' : 'Create Course'
+              )}
+            </Button>
+          </div>
         </CardContent>
       </Card>
-
-      <div className="flex justify-end gap-4">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => router.back()}
-        >
-          Cancel
-        </Button>
-        <Button
-          type="submit"
-          disabled={loading}
-        >
-          {loading ? `${isEditing ? 'Saving...' : 'Creating...'}` : `${isEditing ? 'Save Changes' : 'Create Course'}`}
-        </Button>
-      </div>
     </form>
-  )
+  );
 }

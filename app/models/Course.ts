@@ -1,22 +1,43 @@
 // app/models/Course.ts
-import mongoose from 'mongoose'
+import mongoose, { Schema, model, models, Document } from 'mongoose';
 
-const courseSchema = new mongoose.Schema({
-  title: { 
-    type: String, 
-    required: true,
+export interface ICourse extends Document {
+  title: string;
+  description: string;
+  instructor: Schema.Types.ObjectId;
+  content: Array<{
+    title: string;
+    type: 'text' | 'video' | 'quiz';
+    content: string;
+    order: number;
+  }>;
+  thumbnail?: string;
+  price: number;
+  published: boolean;
+  enrollmentCount: number;
+  rating: number;
+  totalReviews: number;
+  averageRating: number; // Virtual
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const courseSchema = new Schema<ICourse>({
+  title: {
+    type: String,
+    required: [true, 'Title is required'],
     trim: true,
-    maxLength: 200
+    maxlength: [200, 'Title cannot be more than 200 characters']
   },
-  description: { 
-    type: String, 
-    required: true,
+  description: {
+    type: String,
+    required: [true, 'Description is required'],
     trim: true,
-    maxLength: 5000
+    maxlength: [5000, 'Description cannot be more than 5000 characters']
   },
-  instructor: { 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: 'User', 
+  instructor: {
+    type: Schema.Types.ObjectId,
+    ref: 'User',
     required: true,
     index: true
   },
@@ -50,8 +71,8 @@ const courseSchema = new mongoose.Schema({
     min: 0,
     default: 0
   },
-  published: { 
-    type: Boolean, 
+  published: {
+    type: Boolean,
     default: false,
     index: true
   },
@@ -75,28 +96,28 @@ const courseSchema = new mongoose.Schema({
   timestamps: true,
   toJSON: { virtuals: true },
   toObject: { virtuals: true }
-})
+});
 
 // Indexes for better query performance
-courseSchema.index({ title: 'text', description: 'text' }) // Text search
-courseSchema.index({ createdAt: -1 }) // Sorting by creation date
-courseSchema.index({ price: 1 }) // Price filtering
-courseSchema.index({ rating: -1 }) // Rating-based sorting
+courseSchema.index({ title: 'text', description: 'text' });
+courseSchema.index({ createdAt: -1 });
+courseSchema.index({ price: 1 });
+courseSchema.index({ rating: -1 });
+courseSchema.index({ instructor: 1, published: 1 });
 
 // Virtual for average rating
 courseSchema.virtual('averageRating').get(function() {
-  return this.totalReviews > 0 ? this.rating / this.totalReviews : 0
-})
+  return this.totalReviews > 0 ? this.rating / this.totalReviews : 0;
+});
 
 // Pre-save middleware to ensure order numbers are sequential
 courseSchema.pre('save', function(next) {
   if (this.content) {
     this.content.forEach((item, index) => {
-      item.order = index
-    })
+      item.order = index;
+    });
   }
-  next()
-})
+  next();
+});
 
-// Make sure the model hasn't been compiled yet
-export const Course = mongoose.models.Course || mongoose.model('Course', courseSchema)
+export const Course = models.Course || model('Course', courseSchema);

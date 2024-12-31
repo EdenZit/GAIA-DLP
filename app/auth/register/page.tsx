@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import Link from 'next/link';
 
 // Type definitions
 interface FormData {
@@ -81,8 +82,9 @@ export default function RegisterPage() {
       }
 
       setSuccess(true);
+      // Add a slight delay before redirect for better UX
       setTimeout(() => {
-        router.push('/auth/login');
+        router.push('/auth/login?registered=true');
       }, 2000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unexpected error occurred');
@@ -97,24 +99,26 @@ export default function RegisterPage() {
       ...prev,
       [name]: value
     }));
+    // Clear error when user starts typing
+    if (error) setError('');
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="container min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle className="text-center text-2xl font-bold">Create your account</CardTitle>
         </CardHeader>
         <CardContent>
           {error && (
-            <Alert variant="destructive" className="mb-4">
+            <Alert variant="destructive" className="mb-6">
               <AlertTitle>Error</AlertTitle>
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
           
           {success && (
-            <Alert className="mb-4">
+            <Alert className="mb-6">
               <AlertTitle>Success!</AlertTitle>
               <AlertDescription>
                 Registration successful. Redirecting to login...
@@ -123,8 +127,8 @@ export default function RegisterPage() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label htmlFor="name" className="block text-sm font-medium text-gray-700">
+            <div className="space-y-2">
+              <label htmlFor="name" className="text-sm font-medium text-gray-700">
                 Full Name
               </label>
               <Input
@@ -134,13 +138,13 @@ export default function RegisterPage() {
                 required
                 value={formData.name}
                 onChange={handleChange}
-                className="mt-1"
                 placeholder="John Doe"
+                className="w-full"
               />
             </div>
 
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+            <div className="space-y-2">
+              <label htmlFor="email" className="text-sm font-medium text-gray-700">
                 Email
               </label>
               <Input
@@ -150,13 +154,13 @@ export default function RegisterPage() {
                 required
                 value={formData.email}
                 onChange={handleChange}
-                className="mt-1"
                 placeholder="you@example.com"
+                className="w-full"
               />
             </div>
 
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+            <div className="space-y-2">
+              <label htmlFor="password" className="text-sm font-medium text-gray-700">
                 Password
               </label>
               <Input
@@ -166,13 +170,13 @@ export default function RegisterPage() {
                 required
                 value={formData.password}
                 onChange={handleChange}
-                className="mt-1"
                 placeholder="••••••••"
+                className="w-full"
               />
             </div>
 
-            <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700">
+            <div className="space-y-2">
+              <label htmlFor="confirmPassword" className="text-sm font-medium text-gray-700">
                 Confirm Password
               </label>
               <Input
@@ -182,8 +186,8 @@ export default function RegisterPage() {
                 required
                 value={formData.confirmPassword}
                 onChange={handleChange}
-                className="mt-1"
                 placeholder="••••••••"
+                className="w-full"
               />
             </div>
 
@@ -192,8 +196,18 @@ export default function RegisterPage() {
               className="w-full"
               disabled={loading}
             >
-              {loading ? 'Registering...' : 'Register'}
+              {loading ? 'Creating account...' : 'Create account'}
             </Button>
+
+            <div className="mt-4 text-center text-sm text-gray-600">
+              Already have an account?{' '}
+              <Link 
+                href="/auth/login" 
+                className="font-medium text-primary hover:text-primary/90"
+              >
+                Sign in
+              </Link>
+            </div>
           </form>
         </CardContent>
       </Card>
